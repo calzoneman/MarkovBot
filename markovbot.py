@@ -113,7 +113,7 @@ class MarkovBot(irc.bot.SingleServerIRCBot):
             seed = pick_seed(msg, self.markov.k)
             tries += 1
 
-        if seed not in self.markov.seeds:
+        if seed not in self.markov.seeds and len(msg.split()) > 0:
             seed = self.markov.find_seed(random.choice(msg.split()))
         print("Seed is", seed)
 
