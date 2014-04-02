@@ -30,4 +30,6 @@ class Markov:
     def find_seed(self, start_word):
         seeds = list(self.seeds.keys())
         seeds = list(filter(lambda s: start_word in s, seeds))
+        if len(seeds) == 0:
+            return None
         return random.choice(seeds)
