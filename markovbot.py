@@ -100,7 +100,13 @@ class MarkovBot(irc.bot.SingleServerIRCBot):
         if self.last_time + 2.0 > time.time():
             time.sleep(self.last_time + 2.0 - time.time())
 
-        msg = msg.replace(c.get_nickname(), "")
+        # strip out the bot's name
+        words = []
+        for w in msg.split():
+            if c.get_nickname().lower() not in w.lower():
+                words.append(w)
+        msg = " ".join(words)
+
         seed = None
         tries = 0
         while seed not in self.markov.seeds and tries < 10:
