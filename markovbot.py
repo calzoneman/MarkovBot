@@ -139,6 +139,11 @@ class MarkovBot(irc.bot.SingleServerIRCBot):
         c.privmsg(e.target, text)
         self.last_time = time.time()
 
+    def on_kick(self, c, e):
+        if e.arguments[0] == c.get_nickname():
+            time.sleep(1)
+            c.join(e.target)
+
 def pick_seed(src, length):
     words = src.split()
     if len(words) < length:
