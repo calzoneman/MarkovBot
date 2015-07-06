@@ -1,25 +1,53 @@
 import irc.bot
+import irc.connection
 import irc.strings
-import re
 import random
+import re
+import sqlite3
+import ssl
+import sys
 import time
+
+import config
 from markov import Markov
 
 ACCOUNT_LOOKUP = re.compile(r"Information on ([-\w\[\]\{\}\^\|`]+)\s*"
                             r"\(account ([-\w\[\]\{\}\^`]+)\)")
 NOT_REGISTERED = re.compile(r"([-\w\[\]\{\}\^`]+)")
 
-admins = ["cyzon"]
+irc.client.ServerConnection.buffer_class = irc.buffer.LenientDecodingLineBuffer
+
+def cooldown_for(chan):
+    if chan in config.cooldown_override:
+        return config.cooldown_override[chan]
+    else:
+        return config.cooldown
 
 class MarkovBot(irc.bot.SingleServerIRCBot):
-    def __init__(self, markov, channels, nickname, server, port=6667, nspass=None):
-        irc.bot.SingleServerIRCBot.__init__(self, [(server, port)], nickname, nickname)
+    def __init__(self, markov, channels, nickname, server, port=6667,
+            nspass=None, use_ssl=False):
+        if use_ssl:
+            kwargs = {
+                'connect_factory': irc.connection.Factory(
+                    wrapper=ssl.wrap_socket)
+            }
+        else:
+            kwargs = {}
+
+        irc.bot.SingleServerIRCBot.__init__(self, [(server, port)], nickname,
+                nickname, **kwargs)
         self.markov = markov
         self.chanlist = channels
         self.nspass = nspass
         self._acclookup_queue = []
-        self.last_time = 0
+        self.timers = {}
         self.init_time = time.time()
+
+    def should_cooldown(self, chan):
+        if chan not in self.timers:
+            return False
+
+        return self.timers[chan] + cooldown_for(chan) >= time.time()
 
     def lookup_account(self, name, cb):
         self.connection.privmsg("NickServ", "INFO " + name)
@@ -72,13 +100,13 @@ class MarkovBot(irc.bot.SingleServerIRCBot):
         args = e.arguments[0].split()
         if args[0] == "join" and len(args) == 2:
             def after_admin(acc):
-                if acc not in admins:
+                if acc not in config.admins:
                     return
                 c.join(args[1])
             self.lookup_account(n, after_admin)
-        elif args[0] == "part" and n in admins and len(args) == 2:
+        elif args[0] == "part" and len(args) == 2:
             def after_admin(acc):
-                if acc not in admins:
+                if acc not in config.admins:
                     return
                 c.part(args[1])
             self.lookup_account(n, after_admin)
@@ -88,95 +116,82 @@ class MarkovBot(irc.bot.SingleServerIRCBot):
     def on_pubmsg(self, c, e):
         msg = e.arguments[0]
 
-        if time.time() < self.init_time + 2.0:
+        # Require a cooldown period after bot startup (prevents channels with
+        # +H from triggering the bot with scrollback)
+        if time.time() < self.init_time + cooldown_for(e.target):
             return
 
         if c.get_nickname().lower() not in msg.lower():
-            # Unless the bot is specifically addressed, only reply 1% of the time
-            if random.random() > 0.01:
+            # Unless the bot is specifically addressed, only reply
+            # with certain probability
+            if random.random() > config.random_chance:
                 return
 
-        # Cooldown
-        if self.last_time + 2.0 > time.time():
-            time.sleep(self.last_time + 2.0 - time.time())
+        # Require a cooldown period between successive messages
+        if self.should_cooldown(e.target):
+            return
 
-        # strip out the bot's name
-        words = []
-        for w in msg.split():
-            if c.get_nickname().lower() not in w.lower():
-                words.append(w)
-        msg = " ".join(words)
+        try:
+            # only consider seeds that do not include the bot's name
+            words = []
+            for w in msg.split():
+                if c.get_nickname().lower() not in w.lower():
+                    words.append(w)
 
-        seed = None
-        tries = 0
-        while seed not in self.markov.seeds and tries < 10:
-            seed = pick_seed(msg, self.markov.k)
-            tries += 1
+            if len(words) >= self.markov.k:
+                seed = self.markov.pick_random_seed(words)
+            else:
+                seed = self.markov.find_seed(random.choice(words))
 
-        if seed not in self.markov.seeds and len(msg.split()) > 0:
-            seed = self.markov.find_seed(random.choice(msg.split()))
-        print("Seed is", seed)
+            print("Seed is", seed)
 
-        size = random.randint(3, 20)
-        text = self.markov.chain(length=size, seed=seed)
-        if seed in self.markov.seeds:
-            text = " ".join(seed) + " " + text
+            size = random.randint(4, 14)
+            text = self.markov.chain(length=size, seed=seed)
 
-        if text[-1] not in "?!,.;:'\"":
-            text += random.choice("?!.")
+            if text[-1] not in "?!,.;:'\"":
+                text += random.choice("?!.")
 
-        # Filter out names in channels
-        for name in self.channels[e.target].users():
-            filtered = name[0:int(len(name)/2)] + '_' + name[int(len(name)/2):]
-            if name in text:
-                text = text.replace(name, filtered)
+            # Add underscores to usernames to prevent highlighting people
+            names = list(self.channels[e.target].users())
+            names += config.extra_nohighlight
+            for name in names:
+                filtered = (name[0:int(len(name)/2)] +
+                            "_" +
+                            name[int(len(name)/2):])
+                # Escape any regex special chars that may appear in the name
+                name = re.sub(r"([\\\.\?\+\*\$\^\|\(\)\[\]\{\}])", r"\\\1",
+                        name)
+                name = r"\b" + name + r"\b" # Only match on word boundaries
+                text = re.sub(name, filtered, text, flags=re.I)
 
-        # Tag links just in case
-        text = text.replace("http://", "[might be nsfw] http://").replace("https://", "[might be nsfw] https://")
+            # Tag links just in case
+            text = text.replace("http://", "[might be nsfw] http://").replace(
+                    "https://", "[might be nsfw] https://")
 
-        if len(text) > 510:
-            text = text.substring(0, 510)
-        c.privmsg(e.target, text)
-        self.last_time = time.time()
+            # Avoid triggering bots or GameServ commands
+            if text.startswith("!") or text.startswith("."):
+                text = text[1:]
+
+            # IRC messages are at most 512 characters (incl. \r\n)
+            if len(text) > 510:
+                text = text.substring(0, 510)
+            c.privmsg(e.target, text)
+            self.timers[e.target] = time.time()
+        except Exception as err:
+            c.privmsg(e.target, "[Uncaught Exception] " + str(err))
+            print(err, file=sys.stderr)
 
     def on_kick(self, c, e):
+        # Auto rejoin on kick
         if e.arguments[0] == c.get_nickname():
             time.sleep(1)
             c.join(e.target)
 
-def pick_seed(src, length):
-    words = src.split()
-    if len(words) < length:
-        return None
-    i = random.randint(0, len(words) - length)
-    return tuple(words[i:i+length])
-
 def main():
-    import sys
-    if len(sys.argv) not in [5, 6]:
-        print(sys.argv)
-        print("Usage: {} <k> <server[:port]> <channel>[,<channel2>,...] <nickname> [<pass>]"
-              .format(sys.argv[0]))
-        sys.exit(1)
-
-    k = int(sys.argv[1])
-    srv = sys.argv[2].split(":", 1)
-    host = srv[0]
-    if len(srv) == 2:
-        port = int(srv[1])
-    else:
-        port = 6667
-
-    channels = sys.argv[3].split(",")
-    nickname = sys.argv[4]
-    password = None
-    if len(sys.argv) == 6:
-        password = sys.argv[5]
-
-    with open("markovsrc.txt") as f:
-        msrc = f.read().replace("\n", " ").split()
-    markov = Markov(msrc, k=k)
-    bot = MarkovBot(markov, channels, nickname, host, port, password)
+    conn = sqlite3.connect(config.database)
+    markov = Markov(conn.cursor())
+    bot = MarkovBot(markov, config.channels, config.nick, config.server,
+            config.port, nspass=config.password, use_ssl=config.ssl)
 
     import signal
     def sigint(signal, frame):

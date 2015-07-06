@@ -1,0 +1,14 @@
+server = "irc.freenode.net"
+port = 6667
+ssl = False
+channels = ["#markov"]
+nick = "Markov"
+password = None
+database = "chains.db"
+admins = []
+extra_nohighlight = []
+cooldown = 15
+cooldown_override = {
+    "#markov-dev": 0
+}
+random_chance = 0.01
