@@ -138,7 +138,7 @@ class MarkovBot(irc.bot.SingleServerIRCBot):
                 if c.get_nickname().lower() not in w.lower():
                     words.append(w)
 
-            if len(words) >= self.markov.k:
+            if len(words) >= self.markov.k or len(words) == 0:
                 seed = self.markov.pick_random_seed(words)
             else:
                 seed = self.markov.find_seed(random.choice(words))
