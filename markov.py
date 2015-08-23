@@ -31,6 +31,11 @@ class Markov:
             return literal_eval(head)
 
     def pick_random_seed(self, words):
+        if len(words) == 0:
+            self.random_row()
+            for head, _, _ in self.c:
+                return literal_eval(head)
+
         seeds = [str(tuple(words[i:i+self.k]))
                  for i in range(len(words) - self.k + 1)]
         self.c.execute("SELECT * FROM chains WHERE head IN (" +
