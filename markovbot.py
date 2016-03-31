@@ -24,8 +24,8 @@ def cooldown_for(chan):
         return config.cooldown
 
 class MarkovBot(irc.bot.SingleServerIRCBot):
-    def __init__(self, markov, channels, nickname, server, port=6667,
-            nspass=None, use_ssl=False):
+    def __init__(self, markov, channels, nickname, server_list, nspass=None,
+            use_ssl=False):
         if use_ssl:
             kwargs = {
                 'connect_factory': irc.connection.Factory(
@@ -34,7 +34,7 @@ class MarkovBot(irc.bot.SingleServerIRCBot):
         else:
             kwargs = {}
 
-        irc.bot.SingleServerIRCBot.__init__(self, [(server, port)], nickname,
+        irc.bot.SingleServerIRCBot.__init__(self, server_list, nickname,
                 nickname, **kwargs)
         self.markov = markov
         self.chanlist = channels
@@ -190,8 +190,10 @@ class MarkovBot(irc.bot.SingleServerIRCBot):
 def main():
     conn = sqlite3.connect(config.database)
     markov = Markov(conn.cursor())
-    bot = MarkovBot(markov, config.channels, config.nick, config.server,
-            config.port, nspass=config.password, use_ssl=config.ssl)
+    server = irc.bot.ServerSpec(config.server, config.port,
+            config.server_password)
+    bot = MarkovBot(markov, config.channels, config.nick, [server],
+            nspass=config.password, use_ssl=config.ssl)
 
     import signal
     def sigint(signal, frame):

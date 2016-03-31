@@ -5,6 +5,7 @@ channels = ["#markov"]
 nick = "Markov"
 password = None
 database = "chains.db"
+server_password = None
 admins = []
 extra_nohighlight = []
 cooldown = 15
