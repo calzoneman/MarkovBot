@@ -1,30 +1,13 @@
 #!/usr/bin/python3
 
-import sqlite3
+from db import MarkovDB
 import io
-import json
 import time
 
-def init(c, k):
-    c.execute("""CREATE TABLE IF NOT EXISTS chains
-            (head TEXT COLLATE NOCASE, next TEXT COLLATE NOCASE, count INTEGER,
-             PRIMARY KEY (head, next))""")
-    c.execute("CREATE INDEX IF NOT EXISTS chains_head ON chains (head)")
-    c.execute("""CREATE TABLE IF NOT EXISTS meta
-            (key TEXT, value TEXT, PRIMARY KEY (key))""")
-    c.execute("INSERT INTO meta VALUES ('k', ?)", (str(k),))
-
-def generate(c, wordlist, k):
+def generate(db, wordlist, k):
     lists = [wordlist[i:] for i in range(k + 1)]
     for words in zip(*lists):
-        head = words[:k]
-        next = words[k]
-
-        c.execute("UPDATE chains SET count=count+1 WHERE head=? AND next=?",
-                (str(head), next))
-        if c.rowcount == 0:
-            c.execute("INSERT INTO chains VALUES (?, ?, 1)",
-                    (str(head), next))
+        db.insert(words)
 
 if __name__ == "__main__":
     from sys import argv, exit, stdin
@@ -35,12 +18,11 @@ if __name__ == "__main__":
     _, dbname, k = argv
     k = int(k)
 
-    from config import name
-    name_with_brackets = "<" + name + ">"
+    from config import nick
+    name_with_brackets = "<" + nick + ">"
 
-    conn = sqlite3.connect(dbname)
-    init(conn, k)
-    c = conn.cursor()
+    db = MarkovDB(dbname, k)
+    db.create_tables()
 
     lastk = []
     i = 0
@@ -51,14 +33,15 @@ if __name__ == "__main__":
             continue
 
         words = lastk + line[2:]
-        generate(c, words, k)
+        generate(db, words, k)
         lastk = words[len(words)-k:]
         i += 1
         if i % 1000 == 0:
-            conn.commit()
-            print("1000 lines in " + str(time.time() - start) + "s")
+            db.conn.commit()
+            print("1k lines in %.2fs (tot: %d)" % (time.time() - start, i))
+            #print("1000 lines in " + str(time.time() - start) + "s")
             start = time.time()
 
     print("Flushing database writes...", end="")
-    conn.commit()
+    db.conn.commit()
     print("done")

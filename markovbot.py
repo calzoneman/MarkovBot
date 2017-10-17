@@ -3,12 +3,12 @@ import irc.connection
 import irc.strings
 import random
 import re
-import sqlite3
 import ssl
 import sys
 import time
 
 import config
+from db import MarkovDB
 from markov import Markov
 
 ACCOUNT_LOOKUP = re.compile(r"Information on ([-\w\[\]\{\}\^\|`]+)\s*"
@@ -138,15 +138,12 @@ class MarkovBot(irc.bot.SingleServerIRCBot):
                 if c.get_nickname().lower() not in w.lower():
                     words.append(w)
 
-            if len(words) >= self.markov.k or len(words) == 0:
-                seed = self.markov.pick_random_seed(words)
-            else:
-                seed = self.markov.find_seed(random.choice(words))
+            seed = self.markov.random_head(words) if len(words) > 0 else None
 
             print("Seed is", seed)
 
             size = random.randint(4, 14)
-            text = self.markov.chain(length=size, seed=seed)
+            text = self.markov.chain(length=size, head=seed)
 
             if text[-1] not in "?!,.;:'\"":
                 text += random.choice("?!.")
@@ -188,8 +185,8 @@ class MarkovBot(irc.bot.SingleServerIRCBot):
             c.join(e.target)
 
 def main():
-    conn = sqlite3.connect(config.database)
-    markov = Markov(conn.cursor())
+    db = MarkovDB(config.database, k=config.k)
+    markov = Markov(db)
     server = irc.bot.ServerSpec(config.server, config.port,
             config.server_password)
     bot = MarkovBot(markov, config.channels, config.nick, [server],
