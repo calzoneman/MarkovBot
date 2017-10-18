@@ -31,7 +31,7 @@ class MarkovDB:
                 '''
                 CREATE TABLE IF NOT EXISTS heads (
                     head_id INTEGER PRIMARY KEY,
-                    val TEXT,
+                    val TEXT COLLATE NOCASE,
                     occurrences INTEGER
                 )
                 ''',
@@ -44,7 +44,7 @@ class MarkovDB:
                 '''
                 CREATE TABLE IF NOT EXISTS tails (
                     tail_id INTEGER PRIMARY KEY,
-                    val TEXT
+                    val TEXT COLLATE NOCASE
                 )
                 ''',
                 '''
