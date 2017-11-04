@@ -1,73 +1,45 @@
-#!/usr/bin/python
-
-from ast import literal_eval
-import sqlite3
 import random
 
 class Markov:
-    def __init__(self, c):
-        self.c = c
-        self.k = 0
-        self.c.execute("SELECT * FROM meta WHERE key='k'")
-        for _, k in self.c:
-            self.k = int(k)
-        if self.k == 0:
-            raise RuntimeError("Database is missing `k` meta field")
+    def __init__(self, db):
+        self.db = db
+        self.k = db.k
 
-    def random_row(self):
-        self.c.execute("""SELECT * FROM chains WHERE rowid =
-            (ABS(RANDOM()) % (SELECT MAX(rowid) FROM chains))""")
+    def random_head(self, words):
+        if len(words) == 1:
+            heads = self.db.heads_starting_with(words[0])
+            if len(heads) == 0:
+                return self.db.random_head()
 
-    def find_seed(self, word):
-        lower = "('" + word + "'"
-        upper = "('" + word[:-1] + chr(ord(word[-1]) + 1) + "'"
-        self.c.execute("SELECT * FROM chains WHERE head >= ? AND head < ? "
-                       "ORDER BY RANDOM() LIMIT 1", (lower, upper))
-        for head, _, _ in self.c:
-            return literal_eval(head)
+            return random.choice(heads)
 
-        self.random_row()
-        for head, _, _ in self.c:
-            return literal_eval(head)
+        possible_heads = [
+                words[i:i+self.k]
+                for i in range(len(words) - self.k + 1)
+        ]
 
-    def pick_random_seed(self, words):
-        if len(words) == 0:
-            self.random_row()
-            for head, _, _ in self.c:
-                return literal_eval(head)
+        heads = self.db.find_heads(possible_heads)
 
-        seeds = [str(tuple(words[i:i+self.k]))
-                 for i in range(len(words) - self.k + 1)]
-        self.c.execute("SELECT * FROM chains WHERE head IN (" +
-                       ",".join(["?"] * len(seeds)) + ") "
-                       "ORDER BY RANDOM() LIMIT 1", tuple(seeds))
-        for head, _, _ in self.c:
-            return literal_eval(head)
-        return self.find_seed(random.choice(words))
+        if len(heads) == 0:
+            return self.db.random_head()
 
-    def random_next(self, seed):
-        self.c.execute("SELECT * FROM chains WHERE head=?", (str(seed),))
-        possible = []
-        for _, n, count in self.c:
-            possible += [n] * count
+        return random.choice(heads)
 
-        if len(possible) == 0:
-            self.random_row()
-            _, n, _ = next(self.c)
-            return n
-        else:
-            return random.choice(possible)
+    def random_tail(self, head):
+        tail = self.db.random_tail_following(head)
+        if tail is None:
+            tail = self.db.random_tail()
 
-    def chain(self, length=50, seed=None):
-        if not seed:
-            self.random_row()
-            seed, _, _ = next(self.c)
-            seed = literal_eval(seed)
+        return tail
 
-        output = [w for w in seed]
+    def chain(self, length=50, head=None):
+        if not head:
+            head = self.db.random_head()
+
+        output = [w for w in head]
         while len(output) < length:
-            n = self.random_next(seed)
+            n = self.random_tail(head)
             output.append(n)
-            seed = seed[1:] + (n,)
+            head = head[1:] + [n]
 
         return " ".join(output)
