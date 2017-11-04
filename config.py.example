@@ -13,3 +13,4 @@ cooldown_override = {
     "#markov-dev": 0
 }
 random_chance = 0.01
+k = 2

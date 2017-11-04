@@ -1,3 +1,4 @@
+from functools import wraps
 import random
 import sqlite3
 import time
@@ -10,9 +11,10 @@ def dbg(t, methodname, args):
 
 def profile(f):
     if PROFILE:
-        def fn(*args):
+        @wraps(f)
+        def fn(*args, **kwargs):
             start = time.perf_counter()
-            res = f(*args)
+            res = f(*args, **kwargs)
             end = time.perf_counter()
             dbg(end - start, f.__name__, map(str, args[1:]))
             return res
