@@ -179,9 +179,8 @@ class MarkovDB:
         return [val.split(DELIM) for val, in cur]
 
     @profile
-    def heads_starting_with(self, start_word):
-        start = start_word + DELIM
-        end = start_word[:-1] + chr(ord(start_word[-1]) + 1) + DELIM
+    def heads_starting_with(self, start):
+        end = start + DELIM
 
         cur = self.conn.cursor()
         cur.execute(
