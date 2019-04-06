@@ -1,34 +1,27 @@
 #!/usr/bin/python3
 
 import argparse
-from db import MarkovDB
+import pymk
 import sys
 import time
 
-def import_file(db, f):
-    k = db.k
-    context = []
+def import_file(session, ns, f, batch_size=1000):
+    links = []
     i = 0
     start = time.perf_counter()
-
-    for line in f:
-        sentence = context + line.split()
-        sublists = [sentence[i:] for i in range(k+1)]
-
-        for chain in zip(*sublists):
-            db.insert(chain)
-
-        context = sentence[len(sentence)-k:]
-
+    for link in pymk.tokenize(f, link_length=ns.link_length):
+        links.append(link)
         i += 1
-        if i % 1000 == 0:
-            db.conn.commit()
-            print('1000 lines imported in %.2fs (total: %d lines)' % (
-                (time.perf_counter() - start), i
-            ))
+        if len(links) > batch_size:
+            session.create_links(links[:batch_size])
+            links = links[batch_size:]
+            print('\r%d links imported in %.2fs (total: %d links)' % (
+                batch_size, (time.perf_counter() - start), i
+            ), end='')
             start = time.perf_counter()
 
-    db.conn.commit()
+    if len(links) > 0:
+        session.create_links(links)
 
 def main():
     parser = argparse.ArgumentParser(
@@ -41,10 +34,10 @@ def main():
             help='Filename for the SQLite3 database to write to'
     )
     parser.add_argument(
-            '-k', '--context-size',
-            required=True,
+            '-b', '--batch-size',
+            default=1000,
             type=int,
-            help='Number of context words to store as the head of each chain'
+            help='Batch size to use for inserts'
     )
     parser.add_argument(
             'input',
@@ -54,11 +47,11 @@ def main():
 
     args = parser.parse_args(sys.argv[1:])
 
-    db = MarkovDB(args.db, k=args.context_size)
-    db.create_tables()
-
-    with args.input:
-        import_file(db, args.input)
+    db = pymk.SQLiteDB(args.db)
+    with db.session() as session:
+        ns = session.get_namespace()
+        with args.input:
+            import_file(session, ns, args.input, args.batch_size)
 
 if __name__ == '__main__':
     main()

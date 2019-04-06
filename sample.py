@@ -1,8 +1,7 @@
 #!/usr/bin/python3
 
 import argparse
-from db import MarkovDB
-from markov import Markov
+import pymk
 import sys
 
 def main():
@@ -17,24 +16,37 @@ def main():
             help='Filename for the SQLite3 database to use'
     )
     parser.add_argument(
-            '-k', '--context-size',
-            required=True,
+            '-t', '--target-min-length',
             type=int,
-            help='Number of context words in the head of each chain'
+            help='Target minimum length of chain to generate'
     )
     parser.add_argument(
-            '-l', '--length',
+            '-m', '--max-length',
             required=True,
             type=int,
-            help='Length of chain to generate'
+            help='Maximum length of chain to generate'
+    )
+    parser.add_argument(
+            'prefix',
+            type=str,
+            nargs='*',
+            help='Prefix (or exact match) to use as the start seed'
     )
 
     args = parser.parse_args(sys.argv[1:])
 
-    db = MarkovDB(args.db, k=args.context_size)
-    markov = Markov(db)
+    db = pymk.SQLiteDB(args.db)
+    with db.session() as session:
+        ns = session.get_namespace()
 
-    print(markov.chain(length=args.length))
+        words = pymk.generate(session, ns, prefix=args.prefix,
+                max_length=args.max_length,
+                target_min_length=args.target_min_length)
+
+        if len(words) == 0:
+            print('(No results)')
+        else:
+            print(' '.join(words))
 
 if __name__ == '__main__':
     main()

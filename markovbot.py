@@ -1,6 +1,7 @@
 import irc.bot
 import irc.connection
 import irc.strings
+import pymk
 import random
 import re
 import ssl
@@ -8,8 +9,6 @@ import sys
 import time
 
 import config
-from db import MarkovDB
-from markov import Markov
 
 ACCOUNT_LOOKUP = re.compile(r"Information on ([-\w\[\]\{\}\^\|`]+)\s*"
                             r"\(account ([-\w\[\]\{\}\^`]+)\)")
@@ -24,7 +23,7 @@ def cooldown_for(chan):
         return config.cooldown
 
 class MarkovBot(irc.bot.SingleServerIRCBot):
-    def __init__(self, markov, channels, nickname, server_list, nspass=None,
+    def __init__(self, db, channels, nickname, server_list, nspass=None,
             use_ssl=False):
         if use_ssl:
             kwargs = {
@@ -36,12 +35,15 @@ class MarkovBot(irc.bot.SingleServerIRCBot):
 
         irc.bot.SingleServerIRCBot.__init__(self, server_list, nickname,
                 nickname, **kwargs)
-        self.markov = markov
+        self.db = db
         self.chanlist = channels
         self.nspass = nspass
         self._acclookup_queue = []
         self.timers = {}
         self.init_time = time.time()
+
+        with self.db.session() as session:
+            self.ns = session.get_namespace()
 
     def should_cooldown(self, chan):
         if chan not in self.timers:
@@ -138,12 +140,22 @@ class MarkovBot(irc.bot.SingleServerIRCBot):
                 if c.get_nickname().lower() not in w.lower():
                     words.append(w)
 
-            seed = self.markov.random_head(words) if len(words) > 0 else None
+            seed = None
+            prefix = None
+            if len(words) >= self.ns.link_length - 1:
+                seed = words[:self.ns.link_length - 1]
+            elif len(words) > 0:
+                seed = words
 
             print("Seed is", seed)
 
-            size = random.randint(4, 14)
-            text = self.markov.chain(length=size, head=seed)
+            with self.db.session() as session:
+                generated = pymk.generate(session, self.ns, prefix=seed,
+                        max_length=14,
+                        target_min_length=4)
+                if len(generated) == 0:
+                    return
+                text = ' '.join(generated)
 
             if text[-1] not in "?!,.;:'\"":
                 text += random.choice("?!.")
@@ -185,11 +197,10 @@ class MarkovBot(irc.bot.SingleServerIRCBot):
             c.join(e.target)
 
 def main():
-    db = MarkovDB(config.database, k=config.k)
-    markov = Markov(db)
+    db = pymk.SQLiteDB(config.database)
     server = irc.bot.ServerSpec(config.server, config.port,
             config.server_password)
-    bot = MarkovBot(markov, config.channels, config.nick, [server],
+    bot = MarkovBot(db, config.channels, config.nick, [server],
             nspass=config.password, use_ssl=config.ssl)
 
     import signal
