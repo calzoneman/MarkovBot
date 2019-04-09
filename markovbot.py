@@ -154,7 +154,14 @@ class MarkovBot(irc.bot.SingleServerIRCBot):
                         max_length=14,
                         target_min_length=4)
                 if len(generated) == 0:
-                    return
+                    seed = session.random_head()
+                    print("No chains found, pivoting to seed", seed)
+                    generated = pymk.generate(session, self.ns, prefix=seed,
+                            max_length=14,
+                            target_min_length=4)
+                    if len(generated) == 0:
+                        generated = ("I couldn't think of something "
+                                     "about that.").split(" ")
                 text = ' '.join(generated)
 
             if text[-1] not in "?!,.;:'\"":
