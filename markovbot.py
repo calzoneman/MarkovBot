@@ -164,7 +164,7 @@ class MarkovBot(irc.bot.SingleServerIRCBot):
                                      "about that.").split(" ")
                 text = ' '.join(generated)
 
-            if text[-1] not in "?!,.;:'\"":
+            if text[-1] not in "?!,.;:'\"" and not generated[-1].startswith("http"):
                 text += random.choice("?!.")
 
             # Add underscores to usernames to prevent highlighting people
@@ -179,10 +179,6 @@ class MarkovBot(irc.bot.SingleServerIRCBot):
                         name)
                 name = r"\b" + name + r"\b" # Only match on word boundaries
                 text = re.sub(name, filtered, text, flags=re.I)
-
-            # Tag links just in case
-            text = text.replace("http://", "[might be nsfw] http://").replace(
-                    "https://", "[might be nsfw] https://")
 
             # Avoid triggering bots or GameServ commands
             if text.startswith("!") or text.startswith("."):

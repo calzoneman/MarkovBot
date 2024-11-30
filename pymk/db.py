@@ -18,6 +18,7 @@ class SQLiteDB:
 class _session:
     def __init__(self, conn):
         self._conn = conn
+        self._conn.cursor().execute('PRAGMA synchronous = NORMAL;')
 
     def get_namespace(self):
         cursor = self._conn.cursor()
